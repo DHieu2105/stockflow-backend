@@ -5,6 +5,7 @@ import com.stockflow.modules.warehouse.entity.WarehouseStaffId;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface WarehouseStaffRepository
@@ -14,5 +15,7 @@ public interface WarehouseStaffRepository
             UUID warehouseId,
             UUID userId
     );
+
+    List<WarehouseStaff> findById_UserId(UUID userId);
 }
 
