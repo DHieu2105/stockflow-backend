@@ -58,6 +58,16 @@ public class SecurityConfig {
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login"
                         ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/categories",
+                                "/api/v1/categories/**"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/v1/products",
+                                "/api/v1/products/**"
+                        ).permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )

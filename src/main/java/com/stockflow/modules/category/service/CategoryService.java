@@ -39,6 +39,19 @@ public class CategoryService {
                 );
     }
 
+    @Transactional(readOnly = true)
+    public Category getActiveCategoryById(Long id) {
+        Category category = getCategoryById(id);
+
+        if (category.getStatus() != CategoryStatus.ACTIVE) {
+            throw new EntityNotFoundException(
+                    "Category not found with id: " + id
+            );
+        }
+
+        return category;
+    }
+
     public Category createCategory(
             String name,
             String slug,
