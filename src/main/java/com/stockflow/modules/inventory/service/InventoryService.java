@@ -5,6 +5,7 @@ import com.stockflow.modules.identity.repository.UserRepository;
 import com.stockflow.modules.inventory.dto.InventoryResponse;
 import com.stockflow.modules.inventory.dto.StockAdjustmentRequest;
 import com.stockflow.modules.inventory.dto.StockInboundRequest;
+import com.stockflow.modules.inventory.dto.StockMovementResponse;
 import com.stockflow.modules.inventory.entity.Inventory;
 import com.stockflow.modules.inventory.entity.StockMovement;
 import com.stockflow.modules.inventory.entity.StockMovementType;
@@ -76,6 +77,18 @@ public class InventoryService {
 
         return inventoryRepository.findByWarehouse_Id(warehouseId, pageable)
                 .map(InventoryResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<StockMovementResponse> getWarehouseMovements(
+            UUID warehouseId,
+            Pageable pageable
+    ) {
+        warehouseAuthorizationService.checkAccess(warehouseId);
+
+        return stockMovementRepository
+                .findByWarehouse_Id(warehouseId, pageable)
+                .map(StockMovementResponse::from);
     }
 
     // ==================== STOCK INBOUND ====================

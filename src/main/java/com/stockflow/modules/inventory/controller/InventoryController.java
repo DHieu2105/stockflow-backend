@@ -3,6 +3,7 @@ package com.stockflow.modules.inventory.controller;
 import com.stockflow.modules.inventory.dto.InventoryResponse;
 import com.stockflow.modules.inventory.dto.StockAdjustmentRequest;
 import com.stockflow.modules.inventory.dto.StockInboundRequest;
+import com.stockflow.modules.inventory.dto.StockMovementResponse;
 import com.stockflow.modules.inventory.service.InventoryService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -64,6 +65,18 @@ public class InventoryController {
             @PathVariable UUID variantId
     ) {
         InventoryResponse response = inventoryService.getInventory(warehouseId, variantId);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/warehouses/{warehouseId}/movements")
+    @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    public ResponseEntity<Page<StockMovementResponse>> getWarehouseMovements(
+            @PathVariable UUID warehouseId,
+            Pageable pageable
+    ) {
+        Page<StockMovementResponse> response =
+                inventoryService.getWarehouseMovements(warehouseId, pageable);
+
         return ResponseEntity.ok(response);
     }
 }
