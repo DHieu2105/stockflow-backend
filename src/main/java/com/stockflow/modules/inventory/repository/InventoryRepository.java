@@ -29,6 +29,19 @@ public interface InventoryRepository extends JpaRepository<Inventory, UUID> {
     );
 
     @EntityGraph(attributePaths = {"warehouse", "variant"})
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT i FROM Inventory i
+        WHERE i.warehouse.id IN :warehouseIds
+          AND i.variant.id = :variantId
+        ORDER BY i.warehouse.id
+        """)
+    List<Inventory> findByWarehousesAndVariantForUpdate(
+            @Param("warehouseIds") List<UUID> warehouseIds,
+            @Param("variantId") UUID variantId
+    );
+
+    @EntityGraph(attributePaths = {"warehouse", "variant"})
     Optional<Inventory> findByWarehouse_IdAndVariant_Id(
         UUID warehouseId,
         UUID variantId

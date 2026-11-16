@@ -2,7 +2,9 @@ package com.stockflow.modules.warehouse.repository;
 
 import com.stockflow.modules.warehouse.entity.Warehouse;
 import com.stockflow.modules.warehouse.entity.WarehouseStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +16,15 @@ public interface WarehouseRepository
         extends JpaRepository<Warehouse, UUID> {
 
     Optional<Warehouse> findByCode(String code);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT w FROM Warehouse w
+        WHERE w.id = :warehouseId
+        """)
+    Optional<Warehouse> findByIdForUpdate(
+            @Param("warehouseId") UUID warehouseId
+    );
 
     boolean existsByCode(String code);
 

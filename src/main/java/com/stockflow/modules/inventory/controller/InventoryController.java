@@ -4,6 +4,8 @@ import com.stockflow.modules.inventory.dto.InventoryResponse;
 import com.stockflow.modules.inventory.dto.StockAdjustmentRequest;
 import com.stockflow.modules.inventory.dto.StockInboundRequest;
 import com.stockflow.modules.inventory.dto.StockMovementResponse;
+import com.stockflow.modules.inventory.dto.StockOutboundRequest;
+import com.stockflow.modules.inventory.dto.StockTransferRequest;
 import com.stockflow.modules.inventory.service.InventoryService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -34,6 +36,34 @@ public class InventoryController {
     ) {
         UUID userId = (UUID) authentication.getPrincipal();
         InventoryResponse response = inventoryService.inboundStock(request, userId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/outbound")
+    @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    public ResponseEntity<InventoryResponse> outboundStock(
+            @Valid @RequestBody StockOutboundRequest request,
+            Authentication authentication
+    ) {
+        UUID userId = (UUID) authentication.getPrincipal();
+
+        InventoryResponse response =
+                inventoryService.outboundStock(request, userId);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PostMapping("/transfer")
+    @PreAuthorize("hasAnyRole('ADMIN', 'WAREHOUSE_MANAGER', 'WAREHOUSE_STAFF')")
+    public ResponseEntity<InventoryResponse> transferStock(
+            @Valid @RequestBody StockTransferRequest request,
+            Authentication authentication
+    ) {
+        UUID userId = (UUID) authentication.getPrincipal();
+
+        InventoryResponse response =
+                inventoryService.transferStock(request, userId);
+
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -80,4 +110,3 @@ public class InventoryController {
         return ResponseEntity.ok(response);
     }
 }
-

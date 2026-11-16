@@ -6,6 +6,8 @@ import com.stockflow.modules.inventory.dto.InventoryResponse;
 import com.stockflow.modules.inventory.dto.StockAdjustmentRequest;
 import com.stockflow.modules.inventory.dto.StockInboundRequest;
 import com.stockflow.modules.inventory.dto.StockMovementResponse;
+import com.stockflow.modules.inventory.dto.StockOutboundRequest;
+import com.stockflow.modules.inventory.dto.StockTransferRequest;
 import com.stockflow.modules.inventory.entity.Inventory;
 import com.stockflow.modules.inventory.entity.StockMovement;
 import com.stockflow.modules.inventory.entity.StockMovementType;
@@ -24,6 +26,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -140,6 +143,237 @@ public class InventoryService {
         stockMovementRepository.save(movement);
 
         return InventoryResponse.from(inventory);
+    }
+
+    // ==================== STOCK OUTBOUND ====================
+
+    public InventoryResponse outboundStock(
+            StockOutboundRequest request,
+            UUID userId
+    ) {
+        return outboundStock(request.warehouseId(), request, userId);
+    }
+
+    public InventoryResponse outboundStock(
+            UUID warehouseId,
+            StockOutboundRequest request,
+            UUID userId
+    ) {
+        // Kiểm tra quyền truy cập kho
+        warehouseAuthorizationService.checkAccess(warehouseId);
+
+        Warehouse warehouse = getActiveWarehouse(warehouseId);
+        getActiveVariant(request.variantId());
+
+        if (request.quantity() <= 0) {
+            throw new IllegalArgumentException(
+                    "Outbound quantity must be greater than zero"
+            );
+        }
+
+        // Khóa bản ghi tồn kho để chống xuất kho đồng thời
+        Inventory inventory = inventoryRepository
+                .findByWarehouseAndVariantForUpdate(
+                        warehouseId,
+                        request.variantId()
+                )
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Inventory not found for this warehouse and variant"
+                        )
+                );
+
+        int available = inventory.getAvailable();
+
+        // Không cho xuất vượt số lượng khả dụng
+        if (request.quantity() > available) {
+            throw new IllegalStateException(
+                    String.format(
+                            "Insufficient available stock. Available: %d, requested: %d",
+                            available,
+                            request.quantity()
+                    )
+            );
+        }
+
+        int quantityBefore = inventory.getOnHand();
+        int quantityAfter = quantityBefore - request.quantity();
+
+        // Chỉ giảm onHand, không thay đổi reserved
+        inventory.setOnHand(quantityAfter);
+        inventory = inventoryRepository.save(inventory);
+
+        // Xác định người thực hiện
+        User user = (userId != null)
+                ? userRepository.findById(userId).orElse(null)
+                : null;
+
+        // Ghi lịch sử xuất kho
+        StockMovement movement = new StockMovement(
+                inventory,
+                StockMovementType.OUTBOUND,
+                request.quantity(),
+                quantityBefore,
+                quantityAfter,
+                request.referenceType(),
+                request.referenceId(),
+                request.note(),
+                user
+        );
+
+        stockMovementRepository.save(movement);
+
+        return InventoryResponse.from(inventory);
+    }
+
+    // ==================== STOCK TRANSFER ====================
+
+    public InventoryResponse transferStock(
+            StockTransferRequest request,
+            UUID userId
+    ) {
+        UUID sourceWarehouseId = request.sourceWarehouseId();
+        UUID destinationWarehouseId = request.destinationWarehouseId();
+
+        // 1. Không cho chuyển cùng một kho
+        if (sourceWarehouseId.equals(destinationWarehouseId)) {
+            throw new IllegalArgumentException(
+                    "Source and destination warehouses must be different"
+            );
+        }
+
+        // 2. Kiểm tra quyền truy cập cả hai kho
+        warehouseAuthorizationService.checkAccess(sourceWarehouseId);
+        warehouseAuthorizationService.checkAccess(destinationWarehouseId);
+
+        // 3. Khóa hai Warehouse theo cùng một thứ tự UUID
+        List<UUID> warehouseIds = List.of(
+                sourceWarehouseId,
+                destinationWarehouseId
+        ).stream().sorted().toList();
+
+        for (UUID warehouseId : warehouseIds) {
+            Warehouse lockedWarehouse = warehouseRepository
+                    .findByIdForUpdate(warehouseId)
+                    .orElseThrow(() ->
+                            new EntityNotFoundException("Warehouse not found")
+                    );
+
+            if (lockedWarehouse.getStatus() != WarehouseStatus.ACTIVE) {
+                throw new IllegalStateException(
+                        "Cannot transfer stock to or from an inactive warehouse"
+                );
+            }
+        }
+
+        // 4. Kiểm tra variant
+        ProductVariant variant = getActiveVariant(request.variantId());
+
+        // 5. Khóa Inventory của cả hai kho
+        List<Inventory> lockedInventories =
+                inventoryRepository.findByWarehousesAndVariantForUpdate(
+                        warehouseIds,
+                        request.variantId()
+                );
+
+        Inventory sourceInventory = lockedInventories.stream()
+                .filter(i -> i.getWarehouse().getId().equals(sourceWarehouseId))
+                .findFirst()
+                .orElseThrow(() ->
+                        new EntityNotFoundException(
+                                "Source inventory not found"
+                        )
+                );
+
+        // 6. Tìm hoặc tạo Inventory tại kho đích
+        Inventory destinationInventory = lockedInventories.stream()
+                .filter(i -> i.getWarehouse().getId().equals(destinationWarehouseId))
+                .findFirst()
+                .orElseGet(() -> {
+                    Warehouse destinationWarehouse = warehouseRepository
+                            .findById(destinationWarehouseId)
+                            .orElseThrow(() ->
+                                    new EntityNotFoundException("Destination warehouse not found")
+                            );
+
+                    return inventoryRepository.save(
+                            new Inventory(destinationWarehouse, variant)
+                    );
+                });
+
+        // 7. Kiểm tra số lượng chuyển
+        if (request.quantity() <= 0) {
+            throw new IllegalArgumentException(
+                    "Transfer quantity must be greater than zero"
+            );
+        }
+
+        int available = sourceInventory.getAvailable();
+
+        if (request.quantity() > available) {
+            throw new IllegalStateException(
+                    String.format(
+                            "Insufficient available stock. Available: %d, requested: %d",
+                            available,
+                            request.quantity()
+                    )
+            );
+        }
+
+        // 8. Lưu số lượng trước và sau
+        int sourceBefore = sourceInventory.getOnHand();
+        int sourceAfter = sourceBefore - request.quantity();
+
+        int destinationBefore = destinationInventory.getOnHand();
+        int destinationAfter = destinationBefore + request.quantity();
+
+        // 9. Cập nhật tồn kho hai kho
+        sourceInventory.decreaseStock(request.quantity());
+        destinationInventory.increaseStock(request.quantity());
+
+        inventoryRepository.save(sourceInventory);
+        inventoryRepository.save(destinationInventory);
+
+        // 10. Lấy người thực hiện
+        User user = userId != null
+                ? userRepository.findById(userId).orElse(null)
+                : null;
+
+        // 11. Tạo reference ID chung cho hai movement
+        UUID transferReferenceId = UUID.randomUUID();
+
+        // 12. Ghi TRANSFER_OUT tại kho nguồn
+        StockMovement transferOut = new StockMovement(
+                sourceInventory,
+                StockMovementType.TRANSFER_OUT,
+                request.quantity(),
+                sourceBefore,
+                sourceAfter,
+                "STOCK_TRANSFER",
+                transferReferenceId,
+                request.note(),
+                user
+        );
+
+        // 13. Ghi TRANSFER_IN tại kho đích
+        StockMovement transferIn = new StockMovement(
+                destinationInventory,
+                StockMovementType.TRANSFER_IN,
+                request.quantity(),
+                destinationBefore,
+                destinationAfter,
+                "STOCK_TRANSFER",
+                transferReferenceId,
+                request.note(),
+                user
+        );
+
+        stockMovementRepository.saveAll(
+                List.of(transferOut, transferIn)
+        );
+
+        // 14. Trả về tồn kho kho đích
+        return InventoryResponse.from(destinationInventory);
     }
 
     // ==================== STOCK ADJUSTMENT ====================
