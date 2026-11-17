@@ -2,8 +2,10 @@ package com.stockflow.modules.product.repository;
 
 import com.stockflow.modules.product.entity.ProductVariant;
 import com.stockflow.modules.product.entity.ProductStatus;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,5 +24,8 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
             UUID productId,
             ProductStatus status
     );
+
+    @EntityGraph(attributePaths = {"product"})
+    List<ProductVariant> findByIdIn(Collection<UUID> ids);
 }
 

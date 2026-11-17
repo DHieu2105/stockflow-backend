@@ -85,6 +85,16 @@ public class OrderItem {
         return order;
     }
 
+    public void assignOrder(Order order) {
+        if (this.order != null) {
+            throw new IllegalStateException(
+                    "OrderItem đã được gắn với một đơn hàng"
+            );
+        }
+
+        this.order = order;
+    }
+
     public ProductVariant getVariant() {
         return variant;
     }

@@ -1,6 +1,7 @@
 package com.stockflow.modules.inventory.repository;
 
 import com.stockflow.modules.inventory.entity.Inventory;
+import com.stockflow.modules.warehouse.entity.WarehouseStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,9 +44,28 @@ public interface InventoryRepository extends JpaRepository<Inventory, UUID> {
     );
 
     @EntityGraph(attributePaths = {"warehouse", "variant"})
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT i FROM Inventory i
+        WHERE i.warehouse.id = :warehouseId
+          AND i.variant.id IN :variantIds
+        ORDER BY i.variant.id
+        """)
+    List<Inventory> findByWarehouseAndVariantsForUpdate(
+            @Param("warehouseId") UUID warehouseId,
+            @Param("variantIds") Collection<UUID> variantIds
+    );
+
+    @EntityGraph(attributePaths = {"warehouse", "variant"})
     Optional<Inventory> findByWarehouse_IdAndVariant_Id(
         UUID warehouseId,
         UUID variantId
+    );
+
+    @EntityGraph(attributePaths = {"warehouse", "variant"})
+    List<Inventory> findByWarehouse_StatusAndVariant_IdIn(
+            WarehouseStatus status,
+            Collection<UUID> variantIds
     );
 
     @EntityGraph(attributePaths = {"warehouse", "variant"})

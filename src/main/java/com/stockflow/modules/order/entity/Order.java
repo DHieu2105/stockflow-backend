@@ -8,6 +8,8 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -64,6 +66,9 @@ public class Order {
     // 6. Additional information
     @Column(columnDefinition = "TEXT")
     private String note;
+
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<OrderItem> items = new ArrayList<>();
 
     // 7. Timestamps
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -210,6 +215,15 @@ public class Order {
 
     public String getNote() {
         return note;
+    }
+
+    public void addItem(OrderItem item) {
+        item.assignOrder(this);
+        this.items.add(item);
+    }
+
+    public List<OrderItem> getItems() {
+        return items;
     }
 
     public Instant getCreatedAt() {

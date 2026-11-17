@@ -8,15 +8,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(
-        name = "inventories",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uq_inventories_warehouse_variant",
-                        columnNames = {"warehouse_id", "variant_id"}
-                )
-        }
-)
+@Table(name = "inventories", uniqueConstraints = {
+        @UniqueConstraint(name = "uq_inventories_warehouse_variant", columnNames = { "warehouse_id", "variant_id" })
+})
 public class Inventory {
 
     @Id
@@ -116,6 +110,51 @@ public class Inventory {
         this.onHand -= quantity;
     }
 
+    public void reserveStock(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(
+                    "Số lượng giữ hàng phải lớn hơn 0");
+        }
+
+        if (getAvailable() < quantity) {
+            throw new IllegalStateException(
+                    "Không đủ tồn kho khả dụng");
+        }
+
+        this.reserved += quantity;
+    }
+
+    public void releaseReservedStock(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(
+                    "Số lượng giải phóng phải lớn hơn 0");
+        }
+
+        if (this.reserved < quantity) {
+            throw new IllegalStateException(
+                    "Số lượng reserved không đủ để giải phóng");
+        }
+
+        this.reserved -= quantity;
+    }
+
+    public void consumeReservedStock(int quantity) {
+        if (quantity <= 0) {
+            throw new IllegalArgumentException(
+                    "Số lượng xuất kho phải lớn hơn 0"
+            );
+        }
+
+        if (this.reserved < quantity || this.onHand < quantity) {
+            throw new IllegalStateException(
+                    "Không đủ hàng đã giữ để xuất kho"
+            );
+        }
+
+        this.reserved -= quantity;
+        this.onHand -= quantity;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -164,4 +203,3 @@ public class Inventory {
         return updatedAt;
     }
 }
-
