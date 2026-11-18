@@ -76,5 +76,14 @@ public interface InventoryRepository extends JpaRepository<Inventory, UUID> {
         UUID warehouseId,
         Pageable pageable
     );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT i FROM Inventory i
+        WHERE i.id = :inventoryId
+        """)
+    Optional<Inventory> findByIdForUpdate(
+            @Param("inventoryId") UUID inventoryId
+    );
 }
 

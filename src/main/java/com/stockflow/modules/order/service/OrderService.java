@@ -3,6 +3,8 @@ package com.stockflow.modules.order.service;
 import com.stockflow.modules.identity.entity.User;
 import com.stockflow.modules.order.dto.CreateOrderRequest;
 import com.stockflow.modules.order.dto.OrderItemRequest;
+import com.stockflow.modules.order.dto.OrderItemResponse;
+import com.stockflow.modules.order.dto.OrderResponse;
 import com.stockflow.modules.order.entity.Order;
 import com.stockflow.modules.order.entity.OrderItem;
 import com.stockflow.modules.order.repository.OrderRepository;
@@ -28,15 +30,18 @@ public class OrderService {
     private final ProductVariantRepository productVariantRepository;
     private final WarehouseSelectionService warehouseSelectionService;
     private final OrderRepository orderRepository;
+    private final StockReservationService stockReservationService;
 
     public OrderService(
             ProductVariantRepository productVariantRepository,
             WarehouseSelectionService warehouseSelectionService,
-            OrderRepository orderRepository
+            OrderRepository orderRepository,
+            StockReservationService stockReservationService
     ) {
         this.productVariantRepository = productVariantRepository;
         this.warehouseSelectionService = warehouseSelectionService;
         this.orderRepository = orderRepository;
+        this.stockReservationService = stockReservationService;
     }
 
     private Map<UUID, Integer> normalizeItems(
@@ -48,6 +53,22 @@ public class OrderService {
                     item.variantId(),
                     item.quantity(),
                     Integer::sum);
+        }
+
+        for (Map.Entry<UUID, Integer> entry : items.entrySet()) {
+            int totalQuantity = entry.getValue();
+
+            if (totalQuantity <= 0) {
+                throw new IllegalArgumentException(
+                        "Tổng số lượng của mỗi biến thể sản phẩm phải lớn hơn 0"
+                );
+            }
+
+            if (totalQuantity > 999) {
+                throw new IllegalArgumentException(
+                        "Tổng số lượng cho một biến thể sản phẩm không được vượt quá 999"
+                );
+            }
         }
 
         return items;
@@ -93,7 +114,6 @@ public class OrderService {
     }
 
     private List<OrderItem> buildOrderItems(
-            Order order,
             Map<UUID, Integer> requestedItems,
             Map<UUID, ProductVariant> variantMap
     ) {
@@ -159,17 +179,13 @@ public class OrderService {
     private Order prepareOrder(
             CreateOrderRequest request,
             User customer,
-            Warehouse warehouse
+            Warehouse warehouse,
+            Map<UUID, Integer> requestedItems,
+            Map<UUID, ProductVariant> variantMap
     ) {
-        Map<UUID, Integer> requestedItems = normalizeItems(request);
-
-        Map<UUID, ProductVariant> variantMap =
-                validateAndLoadVariants(requestedItems);
-
         Order order = createOrder(request, customer, warehouse);
 
         List<OrderItem> orderItems = buildOrderItems(
-                order,
                 requestedItems,
                 variantMap
         );
@@ -188,5 +204,80 @@ public class OrderService {
         orderItems.forEach(order::addItem);
 
         return order;
+    }
+
+    @Transactional
+    public OrderResponse createOrder(
+            CreateOrderRequest request,
+            User customer
+    ) {
+        // 1. Chuẩn hóa danh sách sản phẩm
+        Map<UUID, Integer> requestedItems = normalizeItems(request);
+
+        // 2. Kiểm tra và load ProductVariant
+        Map<UUID, ProductVariant> variantMap =
+                validateAndLoadVariants(requestedItems);
+
+        // 3. Chọn kho đủ hàng
+        Warehouse warehouse =
+                warehouseSelectionService.selectWarehouse(requestedItems);
+
+        // 4. Chuẩn bị Order và OrderItems
+        Order order = prepareOrder(
+                request,
+                customer,
+                warehouse,
+                requestedItems,
+                variantMap
+        );
+
+        // 5. Lưu Order và OrderItems xuống database
+        Order savedOrder = orderRepository.saveAndFlush(order);
+
+        // 6. Giữ tồn kho
+        stockReservationService.reserveStock(savedOrder);
+
+        // 7. Chuyển entity thành response
+        return mapToResponse(savedOrder);
+    }
+
+    private OrderResponse mapToResponse(Order order) {
+        List<OrderItemResponse> items = order.getItems()
+                .stream()
+                .map(item -> {
+                    BigDecimal lineTotal = item.getLineTotal() != null
+                            ? item.getLineTotal()
+                            : item.getUnitPrice().multiply(
+                                    BigDecimal.valueOf(item.getQuantity())
+                            );
+
+                    return new OrderItemResponse(
+                            item.getId(),
+                            item.getVariant().getId(),
+                            item.getSkuSnapshot(),
+                            item.getProductNameSnapshot(),
+                            item.getVariantNameSnapshot(),
+                            item.getQuantity(),
+                            item.getUnitPrice(),
+                            lineTotal
+                    );
+                })
+                .toList();
+
+        return new OrderResponse(
+                order.getId(),
+                order.getOrderCode(),
+                order.getStatus(),
+                order.getSubtotal(),
+                order.getShippingFee(),
+                order.getDiscountAmount(),
+                order.getTotalAmount(),
+                order.getRecipientName(),
+                order.getRecipientPhone(),
+                order.getShippingAddress(),
+                order.getNote(),
+                items,
+                order.getCreatedAt()
+        );
     }
 }
