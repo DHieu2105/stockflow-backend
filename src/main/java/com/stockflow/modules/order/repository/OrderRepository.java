@@ -34,6 +34,17 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
             Pageable pageable
     );
 
+    // Find an order only when it belongs to the requested customer
+    Optional<Order> findByIdAndCustomer_Id(UUID orderId, UUID customerId);
+
+    // Get all orders, optionally filtered by status
+    Page<Order> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
+    Page<Order> findByStatusOrderByCreatedAtDesc(
+            OrderStatus status,
+            Pageable pageable
+    );
+
     // Find an order with a pessimistic write lock
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

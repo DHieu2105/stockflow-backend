@@ -7,11 +7,15 @@ import com.stockflow.modules.order.dto.OrderItemResponse;
 import com.stockflow.modules.order.dto.OrderResponse;
 import com.stockflow.modules.order.entity.Order;
 import com.stockflow.modules.order.entity.OrderItem;
+import com.stockflow.modules.order.entity.OrderStatus;
 import com.stockflow.modules.order.repository.OrderRepository;
 import com.stockflow.modules.product.entity.ProductStatus;
 import com.stockflow.modules.product.entity.ProductVariant;
 import com.stockflow.modules.product.repository.ProductVariantRepository;
 import com.stockflow.modules.warehouse.entity.Warehouse;
+import jakarta.persistence.EntityNotFoundException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -204,6 +208,61 @@ public class OrderService {
         orderItems.forEach(order::addItem);
 
         return order;
+    }
+
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderForCustomer(UUID orderId, UUID customerId) {
+        Order order = orderRepository.findByIdAndCustomer_Id(orderId, customerId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Không tìm thấy đơn hàng"
+                ));
+
+        return mapToResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderForStaff(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Không tìm thấy đơn hàng"
+                ));
+
+        return mapToResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrderResponse> getCustomerOrders(
+            UUID customerId,
+            OrderStatus status,
+            Pageable pageable
+    ) {
+        Page<Order> orders = status == null
+                ? orderRepository.findByCustomer_IdOrderByCreatedAtDesc(
+                        customerId,
+                        pageable
+                )
+                : orderRepository.findByCustomer_IdAndStatusOrderByCreatedAtDesc(
+                        customerId,
+                        status,
+                        pageable
+                );
+
+        return orders.map(this::mapToResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<OrderResponse> getAllOrders(
+            OrderStatus status,
+            Pageable pageable
+    ) {
+        Page<Order> orders = status == null
+                ? orderRepository.findAllByOrderByCreatedAtDesc(pageable)
+                : orderRepository.findByStatusOrderByCreatedAtDesc(
+                        status,
+                        pageable
+                );
+
+        return orders.map(this::mapToResponse);
     }
 
     @Transactional
